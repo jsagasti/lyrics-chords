@@ -1,7 +1,9 @@
-/* Service worker: offline shell + OTA updates.
-   Bump CACHE version when the app shell changes to force an update.
-   Song content is fetched network-first so new lyrics appear without a version bump. */
-const CACHE = 'lyrics-shell-v3';
+/* Service worker: OTA-friendly.
+   Strategy: network-first for everything, with a cache fallback for offline.
+   - Online (the normal kiosk state): every reload fetches the latest app + songs,
+     so pushes to the repo show up immediately. No version bump needed.
+   - Offline: falls back to the last-cached copy so the tablet still works. */
+const CACHE = 'lyrics-v5';
 const SHELL = [
   './',
   './index.html',
@@ -26,22 +28,15 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
-  const url = new URL(req.url);
-
-  // Songs + index: network-first so content updates OTA, fall back to cache offline.
-  if (url.pathname.includes('/songs/')) {
-    e.respondWith(
-      fetch(req)
-        .then((res) => {
+  e.respondWith(
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy));
-          return res;
-        })
-        .catch(() => caches.match(req))
-    );
-    return;
-  }
-
-  // App shell: cache-first for instant load.
-  e.respondWith(caches.match(req).then((hit) => hit || fetch(req)));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
+  );
 });
