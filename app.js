@@ -18,8 +18,14 @@ const state = {
   speed: clampSpeed(Number(localStorage.getItem('scrollLevel')) || 6), // level 1..20
   rafId: null,
   scrollAccum: 0,
+  pxPerLine: 38,
   wakeLock: null,
 };
+
+// Scroll pace is relative to text: px/s = level * lineHeight * SPEED_K.
+// Basing it on the rendered line height makes a given level feel the same
+// regardless of font size or viewport. Tuned so low levels are a gentle crawl.
+const SPEED_K = 0.12;
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -263,9 +269,17 @@ function escapeHtml(s) {
 /* ---------- Auto-scroll ---------- */
 function toggleScroll() { state.scrolling ? stopScroll() : startScroll(); }
 
+function measureLineHeight() {
+  const cs = getComputedStyle(el.song);
+  let lh = parseFloat(cs.lineHeight);
+  if (!lh || Number.isNaN(lh)) lh = parseFloat(cs.fontSize) * 1.5;
+  return lh || 38;
+}
+
 function startScroll() {
   if (state.scrolling) return;
   state.scrolling = true;
+  state.pxPerLine = measureLineHeight();
   el.btnScroll.classList.add('on');
   el.btnScroll.innerHTML = '&#10073;&#10073;'; // pause bars
   let last = null;
@@ -274,7 +288,7 @@ function startScroll() {
     if (last === null) last = ts;
     const dt = (ts - last) / 1000;
     last = ts;
-    const pxPerSec = state.speed * 20; // level 1..20 -> 20..400 px/s
+    const pxPerSec = state.speed * state.pxPerLine * SPEED_K; // reading pace, text-relative
     state.scrollAccum += pxPerSec * dt;
     if (state.scrollAccum >= 1) {
       const whole = Math.floor(state.scrollAccum);
@@ -316,6 +330,7 @@ function setFont(delta) {
   state.fontScale = Math.max(0.6, Math.min(2.6, +(state.fontScale + delta).toFixed(2)));
   document.documentElement.style.setProperty('--font-scale', state.fontScale);
   localStorage.setItem('fontScale', state.fontScale);
+  if (state.scrolling) state.pxPerLine = measureLineHeight(); // keep pace text-relative
 }
 
 /* ---------- Drawer ---------- */
