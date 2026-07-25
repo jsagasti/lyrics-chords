@@ -3,7 +3,7 @@
    - Online (the normal kiosk state): every reload fetches the latest app + songs,
      so pushes to the repo show up immediately. No version bump needed.
    - Offline: falls back to the last-cached copy so the tablet still works. */
-const CACHE = 'lyrics-v5';
+const CACHE = 'lyrics-v6';
 const SHELL = [
   './',
   './index.html',
@@ -28,8 +28,11 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
+  // 'no-cache' forces the browser HTTP cache to revalidate with the server
+  // (conditional request), so GitHub Pages' 10-min cache never serves a stale
+  // shell. Fresh copy goes into our cache for offline fallback.
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' })
       .then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
