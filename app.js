@@ -15,7 +15,7 @@ const state = {
   transpose: 0,       // semitones
   fontScale: Number(localStorage.getItem('fontScale')) || 1,
   scrolling: false,
-  speed: Number(localStorage.getItem('speed')) || 30,
+  speed: clampSpeed(Number(localStorage.getItem('scrollLevel')) || 6), // level 1..20
   rafId: null,
   scrollAccum: 0,
   wakeLock: null,
@@ -24,7 +24,7 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const el = {
   title: $('title'), song: $('song'), stage: $('stage'),
-  trVal: $('tr-val'), speed: $('speed'),
+  trVal: $('tr-val'), spdVal: $('spd-val'),
   btnScroll: $('btn-scroll'), drawer: $('drawer'), scrim: $('scrim'),
   list: $('song-list'), filter: $('filter'), foot: $('drawer-foot'),
 };
@@ -274,7 +274,7 @@ function startScroll() {
     if (last === null) last = ts;
     const dt = (ts - last) / 1000;
     last = ts;
-    const pxPerSec = state.speed * 4; // speed 1..100 -> ~4..400 px/s
+    const pxPerSec = state.speed * 20; // level 1..20 -> 20..400 px/s
     state.scrollAccum += pxPerSec * dt;
     if (state.scrollAccum >= 1) {
       const whole = Math.floor(state.scrollAccum);
@@ -302,6 +302,14 @@ function setTranspose(delta) {
   state.transpose = Math.max(-11, Math.min(11, state.transpose + delta));
   el.trVal.textContent = (state.transpose > 0 ? '+' : '') + state.transpose;
   render();
+}
+
+function clampSpeed(v) { return Math.max(1, Math.min(20, v || 1)); }
+
+function setSpeed(delta) {
+  state.speed = clampSpeed(state.speed + delta);
+  if (el.spdVal) el.spdVal.textContent = state.speed;
+  localStorage.setItem('scrollLevel', state.speed);
 }
 
 function setFont(delta) {
@@ -340,11 +348,13 @@ function toast(msg) {
 /* ---------- Wire up ---------- */
 function init() {
   document.documentElement.style.setProperty('--font-scale', state.fontScale);
-  el.speed.value = state.speed;
+  if (el.spdVal) el.spdVal.textContent = state.speed;
 
   $('tr-up').addEventListener('click', () => setTranspose(1));
   $('tr-down').addEventListener('click', () => setTranspose(-1));
   $('btn-scroll').addEventListener('click', toggleScroll);
+  $('spd-up').addEventListener('click', () => setSpeed(1));
+  $('spd-down').addEventListener('click', () => setSpeed(-1));
   $('btn-font-up').addEventListener('click', () => setFont(0.1));
   $('btn-font-down').addEventListener('click', () => setFont(-0.1));
   $('btn-songs').addEventListener('click', openDrawer);
@@ -352,10 +362,6 @@ function init() {
   $('scrim').addEventListener('click', closeDrawer);
   $('btn-refresh').addEventListener('click', () => { toast('Reloading…'); loadIndex(); });
   el.filter.addEventListener('input', buildList);
-  el.speed.addEventListener('input', () => {
-    state.speed = Number(el.speed.value);
-    localStorage.setItem('speed', state.speed);
-  });
 
   document.addEventListener('keydown', (e) => {
     if (e.target === el.filter) return;
