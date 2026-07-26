@@ -231,16 +231,51 @@ body {
   color: var(--fg);
   font-size: 1.05rem;
 }
-#song-list { list-style: none; margin: 0; padding: 0 0 12px; overflow-y: auto; flex: 1 1 auto; }
-#song-list li {
-  padding: 16px;
-  border-bottom: 1px solid #20202c;
-  cursor: pointer;
-  font-size: 1.1rem;
+/* Add-song (LLM) box */
+.addbox { padding: 8px 12px; border-bottom: 1px solid #2a2a38; }
+.addrow { display: flex; gap: 8px; }
+#add-input {
+  flex: 1 1 auto; min-width: 0; padding: 12px; border-radius: 10px;
+  border: 1px solid #33334a; background: #101018; color: var(--fg); font-size: 1rem;
 }
-#song-list li:active, #song-list li.active { background: var(--ctrl-active); }
-#song-list li .sub { display: block; color: var(--muted); font-size: .85rem; }
-#drawer-foot { padding: 10px 16px; color: var(--muted); font-size: .8rem; }
+#btn-add-search { min-width: 72px; height: 46px; font-size: 1rem; font-weight: 600; }
+#add-results { margin-top: 8px; max-height: 34vh; overflow-y: auto; }
+.add-opt {
+  padding: 12px; border-radius: 10px; background: #101018; margin-bottom: 6px; cursor: pointer;
+  border: 1px solid #23233010;
+}
+.add-opt:active { background: var(--ctrl-active); }
+.add-opt-main { font-weight: 600; }
+.add-opt-note { color: var(--muted); font-size: .82rem; margin-top: 2px; }
+.addstatus { margin-top: 8px; color: var(--accent); font-size: .9rem; }
+
+/* Library tree: Genre -> Artist -> Song */
+#song-list { margin: 0; padding: 0 0 12px; overflow-y: auto; flex: 1 1 auto; }
+.genre-head {
+  display: flex; align-items: center; gap: 8px; padding: 13px 14px; cursor: pointer;
+  font-weight: 700; font-size: 1.05rem; color: var(--accent);
+  text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid #20202c;
+}
+.genre-head .tw { width: 1em; opacity: .8; }
+.artist-head {
+  padding: 9px 14px 9px 26px; color: var(--muted); font-weight: 600; font-size: .9rem;
+}
+.song-item {
+  padding: 13px 14px 13px 40px; border-bottom: 1px solid #17171f; cursor: pointer; font-size: 1.05rem;
+}
+.song-item:active, .song-item.active { background: var(--ctrl-active); }
+.song-item .sub { display: block; color: var(--muted); font-size: .82rem; margin-top: 2px; }
+.empty { padding: 20px 14px; color: var(--muted); }
+
+#drawer-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; color: var(--muted); font-size: .8rem; border-top: 1px solid #2a2a38;
+}
+.linkbtn {
+  background: none; border: 1px solid #33334a; color: var(--accent);
+  padding: 8px 12px; border-radius: 8px; font-size: .85rem; cursor: pointer;
+}
+.linkbtn:active { background: var(--ctrl-active); }
 
 #scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 15; }
 

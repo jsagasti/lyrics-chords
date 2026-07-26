@@ -1,0 +1,11 @@
+{
+  "name": "lyrics-api",
+  "version": "1.0.0",
+  "description": "Azure Functions backend for the Lyrics & Chords app",
+  "main": "index.js",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "@azure/storage-blob": "^12.24.0",
+    "openai": "^4.67.3"
+  }
+}
