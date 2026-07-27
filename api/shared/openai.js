@@ -26,4 +26,18 @@ async function chatJSON(system, user, { temperature = 0.3 } = {}) {
   return JSON.parse(rsp.choices[0].message.content);
 }
 
-module.exports = { client, MODEL, chatJSON };
+// Web-search-grounded JSON: uses the Responses API with the web_search tool so the
+// model can fetch real chords/lyrics (e.g. from lacuerda.net) instead of inventing them.
+async function webSearchJSON(prompt) {
+  const rsp = await client().responses.create({
+    model: MODEL(),
+    tools: [{ type: 'web_search_preview' }],
+    input: prompt,
+  });
+  const text = rsp.output_text || '';
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('la búsqueda web no devolvió JSON');
+  return JSON.parse(m[0]);
+}
+
+module.exports = { client, MODEL, chatJSON, webSearchJSON };

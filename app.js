@@ -165,6 +165,16 @@ function render() {
     meta.textContent = parts.join('  ·  ');
     el.song.appendChild(meta);
   }
+  if (song.source) {
+    const src = document.createElement('div');
+    src.className = 'song-meta';
+    const a = document.createElement('a');
+    a.href = song.source; a.target = '_blank'; a.rel = 'noopener';
+    a.className = 'srclink';
+    a.textContent = 'fuente ↗';
+    src.appendChild(a);
+    el.song.appendChild(src);
+  }
   const frag = document.createDocumentFragment();
   for (const ln of song.lines) frag.appendChild(renderLine(ln, useF));
   el.song.appendChild(frag);
@@ -222,6 +232,7 @@ async function loadSong(entry) {
     const song = parseChordPro(text);
     if (!song.title || song.title === 'Sin título') song.title = entry.title || song.title;
     if (!song.artist && entry.artist) song.artist = entry.artist;
+    song.source = entry.source || '';
     state.current = song;
     state.currentId = entry.id;
     state.transpose = 0;

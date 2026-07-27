@@ -200,6 +200,7 @@ body {
 }
 .song-meta { color: var(--muted); font-size: calc(1rem * var(--font-scale)); margin-bottom: 1em; }
 .comment { color: var(--muted); font-style: italic; }
+.srclink { color: var(--chord); text-decoration: none; font-size: calc(.85rem * var(--font-scale)); }
 
 /* ---- Drawer ---- */
 #drawer {
