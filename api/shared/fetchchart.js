@@ -27,6 +27,7 @@ Ella durmió al calor de las brasas
 SALIDA:
 [Bm]Ella dur[G]mió al ca[D]lor de las bra[A]sas
 Otras reglas:
+- NOTACIÓN: usá SIEMPRE notación anglosajona para los acordes Y para el {key:}: C, D, E, F, G, A, B (con # o b). Si la fuente viene en notación latina (Do, Re, Mi, Fa, Sol, La, Si), convertila: Do=C, Re=D, Mi=E, Fa=F, Sol=G, La=A, Si=B (ej. Mib=Eb, Sol=G, Do#=C#, Lam=Am). Mantené los sufijos (m, 7, maj7, sus4, dim, etc.) y el bajo (/G).
 - Si la entrada es SOLO LETRA (sin acordes), devolvé solo la letra en ChordPro, SIN inventar acordes.
 - Líneas solo de acordes (intro/interludio): "[Bm] [G] [D] [A]".
 - Agregá {start_of_verse: Verso 1} / {start_of_chorus: Estribillo} / {start_of_bridge: Puente} donde corresponda.
