@@ -17,6 +17,7 @@ const API = {
   del: 'api/deletesong',
   update: 'api/updatesong',
   folders: 'api/folders',
+  prefs: 'api/prefs',
 };
 
 const state = {
@@ -33,10 +34,12 @@ const state = {
   collapsed: JSON.parse(localStorage.getItem('collapsedGenres') || '{}'),
   genreOrder: [],
   currentRaw: '',
+  prefs: {}, // per-song: { id: {transpose, speed, fontScale} }
 };
 
 let editorSongId = null;
 let menuJustOpenedAt = 0;
+let prefTimer = null;
 
 const SPEED_K = 0.12;
 
@@ -255,8 +258,7 @@ async function loadSong(entry) {
     song.source = entry.source || '';
     state.current = song;
     state.currentId = entry.id;
-    state.transpose = 0;
-    el.trVal.textContent = '0';
+    applyPrefs(entry.id);
     stopScroll();
     el.stage.scrollTop = 0;
     render();
@@ -638,23 +640,61 @@ function stopScroll() {
   el.btnScroll.innerHTML = '&#9654;';
 }
 
+/* ---------- Per-song preferences (transpose / speed / font) ---------- */
+async function loadPrefs() {
+  try {
+    const r = await fetch(API.prefs, { cache: 'no-cache' });
+    if (r.ok) { const d = await r.json(); state.prefs = d.prefs || {}; }
+  } catch (_) { /* offline: keep whatever we have */ }
+}
+
+// Apply a song's saved prefs on load. Transpose defaults to 0; speed/font inherit the
+// current values when the song has none saved (so a fresh song keeps a consistent look).
+function applyPrefs(id) {
+  const p = (state.prefs && state.prefs[id]) || {};
+  state.transpose = Number.isFinite(p.transpose) ? p.transpose : 0;
+  if (Number.isFinite(p.speed)) state.speed = clampSpeed(p.speed);
+  if (Number.isFinite(p.fontScale)) state.fontScale = p.fontScale;
+  el.trVal.textContent = (state.transpose > 0 ? '+' : '') + state.transpose;
+  el.spdVal.textContent = state.speed;
+  document.documentElement.style.setProperty('--font-scale', state.fontScale);
+}
+
+// Save the current song's prefs (debounced) to the backend.
+function savePref() {
+  const id = state.currentId;
+  if (!id) return;
+  state.prefs[id] = { transpose: state.transpose, speed: state.speed, fontScale: state.fontScale };
+  clearTimeout(prefTimer);
+  prefTimer = setTimeout(() => {
+    fetch(API.prefs, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ songId: id, transpose: state.transpose, speed: state.speed, fontScale: state.fontScale }),
+    }).catch(() => {});
+  }, 800);
+}
+
 /* ---------- Transpose / speed / font ---------- */
 function setTranspose(delta) {
   state.transpose = Math.max(-11, Math.min(11, state.transpose + delta));
   el.trVal.textContent = (state.transpose > 0 ? '+' : '') + state.transpose;
   render();
+  savePref();
 }
 function clampSpeed(v) { return Math.max(1, Math.min(20, v || 1)); }
 function setSpeed(delta) {
   state.speed = clampSpeed(state.speed + delta);
   if (el.spdVal) el.spdVal.textContent = state.speed;
-  localStorage.setItem('scrollLevel', state.speed);
+  localStorage.setItem('scrollLevel', state.speed); // global default for songs w/o a saved pref
+  savePref();
 }
 function setFont(delta) {
   state.fontScale = Math.max(0.6, Math.min(2.6, +(state.fontScale + delta).toFixed(2)));
   document.documentElement.style.setProperty('--font-scale', state.fontScale);
-  localStorage.setItem('fontScale', state.fontScale);
+  localStorage.setItem('fontScale', state.fontScale); // global default for songs w/o a saved pref
   if (state.scrolling) state.pxPerLine = measureLineHeight();
+  savePref();
 }
 
 /* ---------- Drawer ---------- */
@@ -707,7 +747,7 @@ function init() {
     else if (e.key === 'ArrowDown') setTranspose(-1);
   });
 
-  loadIndex();
+  loadPrefs().then(loadIndex);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 document.addEventListener('DOMContentLoaded', init);
