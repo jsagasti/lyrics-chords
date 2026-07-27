@@ -283,7 +283,7 @@ body {
 }
 .linkbtn:active { background: var(--ctrl-active); }
 
-#scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 15; }
+#scrim { position: fixed; top: 0; right: 0; bottom: 0; left: 0; background: rgba(0,0,0,.5); z-index: 15; }
 
 .toast {
   position: fixed;
@@ -316,7 +316,7 @@ body {
 .song-line.editable { cursor: text; }
 
 /* ---- Full-screen editor ---- */
-#editor { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; }
+#editor { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; }
 .editor-head {
   flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 10px 12px; padding-top: max(10px, env(safe-area-inset-top));
@@ -333,7 +333,7 @@ body {
 }
 
 /* ---- Form modal ---- */
-#formmodal { position: fixed; inset: 0; z-index: 45; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; }
+#formmodal { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 45; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; }
 .form-box {
   width: min(92vw, 420px); background: var(--bg-bar); border: 1px solid #33334a; border-radius: 14px;
   padding: 18px; box-shadow: 0 10px 40px rgba(0,0,0,.6);
