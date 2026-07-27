@@ -48,13 +48,14 @@ const state = {
   genreOrder: [],
   currentRaw: '',
   prefs: {}, // per-song: { id: {transpose, speed, fontScale} }
+  pending: [], // songs being fetched via LLM (shown with a spinner, not selectable)
 };
 
 let editorSongId = null;
 let menuJustOpenedAt = 0;
 let prefTimer = null;
 
-const SPEED_K = 0.12;
+const SPEED_K = 0.04; // recalibrado: el nivel 20 ~ lo más rápido que se necesita (antes 5 alcanzaba)
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -288,6 +289,7 @@ async function loadSong(entry) {
 function buildList() {
   const q = (el.filter.value || '').trim().toLowerCase();
   el.list.innerHTML = '';
+  renderPending();
 
   if (q) { renderFiltered(q); return; }
 
@@ -310,6 +312,9 @@ function buildList() {
     gHead.innerHTML = `<span class="tw">${collapsed ? '▸' : '▾'}</span><span class="gname">${escapeHtml(g)}</span>`;
     gHead.addEventListener('click', () => { if (justMenu()) return; state.collapsed[g] = !state.collapsed[g]; persistCollapsed(); buildList(); });
     onLongPress(gHead, (e) => genreMenu(g, e));
+    gHead.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; gHead.classList.add('drop'); });
+    gHead.addEventListener('dragleave', () => gHead.classList.remove('drop'));
+    gHead.addEventListener('drop', (e) => { e.preventDefault(); gHead.classList.remove('drop'); dropOnGenre(g, e); });
     gWrap.appendChild(gHead);
 
     if (!collapsed) {
@@ -356,9 +361,36 @@ function songItem(s, showArtist) {
     a.textContent = s.artist;
     item.appendChild(a);
   }
+  item.draggable = true;
+  item.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('text/plain', s.id);
+    e.dataTransfer.effectAllowed = 'move';
+  });
   item.addEventListener('click', () => { if (justMenu()) return; loadSong(s); });
   onLongPress(item, (e) => songMenu(s, e));
   return item;
+}
+
+function renderPending() {
+  for (const p of state.pending) {
+    const it = document.createElement('div');
+    it.className = 'song-item pending';
+    it.innerHTML = `<span class="spinner-sm"></span><span class="song-title">${escapeHtml(p.title)}</span>` +
+      (p.artist ? `<span class="song-artist">${escapeHtml(p.artist)}</span>` : '');
+    el.list.appendChild(it); // no click / not draggable -> not selectable
+  }
+}
+
+async function dropOnGenre(g, e) {
+  const id = e.dataTransfer.getData('text/plain');
+  if (!id) return;
+  const song = state.songs.find((x) => x.id === id);
+  if (!song || (song.genre || '') === g) return;
+  try {
+    await apiPost(API.update, { id, genre: g });
+    await loadIndex();
+    toast('Movida a ' + g);
+  } catch (err) { toast('Error: ' + err.message); }
 }
 
 function markActive(id) {
@@ -397,17 +429,22 @@ async function doSearch() {
 }
 
 async function addSong(opt) {
-  setAddStatus(`Generando "${opt.title}"…`);
+  const pnd = { title: opt.title, artist: opt.artist };
+  state.pending.push(pnd);
   el.addResults.innerHTML = '';
+  el.addInput.value = '';
+  setAddStatus('');
+  buildList(); // show the pending song with a spinner (not selectable)
+  const provider = defaultProvider();
   try {
-    const p = defaultProvider();
-    const data = await apiPost(API.add, { title: opt.title, artist: opt.artist, providerSite: p.site, lyricsOnly: p.lyricsOnly });
-    setAddStatus('');
-    el.addInput.value = '';
+    const data = await apiPost(API.add, { title: opt.title, artist: opt.artist, providerSite: provider.site, lyricsOnly: provider.lyricsOnly });
+    state.pending = state.pending.filter((x) => x !== pnd);
     await loadIndex();
     if (data.added) loadSong(data.added);
     toast('Agregada: ' + data.added.title);
   } catch (e) {
+    state.pending = state.pending.filter((x) => x !== pnd);
+    buildList();
     setAddStatus('Error: ' + e.message);
   }
 }
@@ -500,25 +537,42 @@ function artistMenu(g, a, e) {
 function showForm(title, fields, onOk) {
   $('form-title').textContent = title;
   const wrap = $('form-fields'); wrap.innerHTML = '';
-  const inputs = {};
+  const getters = {};
   for (const f of fields) {
     const l = document.createElement('label'); l.className = 'form-field';
     l.appendChild(document.createTextNode(f.label));
-    const inp = document.createElement('input'); inp.type = 'text'; inp.value = f.value || '';
-    l.appendChild(inp); wrap.appendChild(l);
-    inputs[f.name] = inp;
+    if (f.type === 'select') {
+      const sel = document.createElement('select'); sel.className = 'form-select';
+      for (const o of (f.options || [])) {
+        const op = document.createElement('option'); op.value = o; op.textContent = o; sel.appendChild(op);
+      }
+      let newInput = null;
+      if (f.allowNew) {
+        const op = document.createElement('option'); op.value = '__new__'; op.textContent = '＋ Nuevo…'; sel.appendChild(op);
+        newInput = document.createElement('input'); newInput.type = 'text'; newInput.placeholder = 'Nuevo nombre';
+        newInput.className = 'form-newinput'; newInput.hidden = true;
+        sel.addEventListener('change', () => { newInput.hidden = sel.value !== '__new__'; if (!newInput.hidden) newInput.focus(); });
+      }
+      if (f.value && (f.options || []).includes(f.value)) sel.value = f.value;
+      l.appendChild(sel);
+      if (newInput) l.appendChild(newInput);
+      getters[f.name] = () => (f.allowNew && sel.value === '__new__') ? newInput.value.trim() : sel.value;
+    } else {
+      const inp = document.createElement('input'); inp.type = 'text'; inp.value = f.value || '';
+      l.appendChild(inp);
+      getters[f.name] = () => inp.value.trim();
+    }
+    wrap.appendChild(l);
   }
   const modal = $('formmodal'); modal.hidden = false;
   const okBtn = $('form-ok'), cancelBtn = $('form-cancel');
   const close = () => { modal.hidden = true; okBtn.onclick = null; cancelBtn.onclick = null; };
   okBtn.onclick = async () => {
-    const vals = {}; for (const k in inputs) vals[k] = inputs[k].value.trim();
+    const vals = {}; for (const k in getters) vals[k] = getters[k]();
     close();
     try { await onOk(vals); } catch (e) { toast('Error: ' + e.message); }
   };
   cancelBtn.onclick = close;
-  const first = fields[0] && inputs[fields[0].name];
-  if (first) { first.focus(); first.select(); }
 }
 
 /* ---------- Song editor ---------- */
@@ -647,10 +701,13 @@ async function deleteSong(s) {
   } catch (e) { toast('Error: ' + e.message); }
 }
 function reclassifySong(s) {
+  const genres = [...new Set(state.songs.map((x) => x.genre || 'Sin género'))].sort(cmp);
+  if (!genres.includes('Otros')) genres.push('Otros');
   showForm('Reclasificar canción', [
-    { name: 'genre', label: 'Género', value: s.genre || '' },
+    { name: 'genre', label: 'Género', type: 'select', options: genres, value: s.genre || '', allowNew: true },
     { name: 'artist', label: 'Artista', value: s.artist || '' },
   ], async (v) => {
+    if (!v.genre) return;
     await apiPost(API.update, { id: s.id, genre: v.genre, artist: v.artist });
     await loadIndex();
     toast('Reclasificada');

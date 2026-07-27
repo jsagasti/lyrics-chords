@@ -1,15 +1,15 @@
 'use strict';
-// Fetch a song's chart from a chosen provider (web search) and convert it to inline ChordPro.
-// Shared by /api/addsong (saves) and /api/refetch (preview, no save).
-const { webSearchJSON, chatJSON } = require('./openai');
+// Fetch a song's chart from a chosen provider (web search), then convert it to inline ChordPro
+// DETERMINISTICALLY: chords are placed by their column position over the lyric line (no LLM guessing).
+const { webSearchJSON } = require('./openai');
 
 function searchPrompt(title, artist, existingGenres, site, lyricsOnly) {
   const list = (existingGenres && existingGenres.length)
     ? existingGenres.map((g) => `"${g}"`).join(', ')
     : '(ninguno todavía)';
   const how = lyricsOnly
-    ? `Es un sitio de SOLO LETRA (sin acordes). Traé la LETRA real tal cual, sin inventar. El campo "raw" tendrá SOLO la letra (sin acordes).`
-    : `Traé la LETRA y los ACORDES reales tal cual están (acordes arriba de las líneas de letra). El campo "raw" tendrá el chart completo.`;
+    ? `Es un sitio de SOLO LETRA (sin acordes). Traé la LETRA real tal cual. El campo "raw" tendrá SOLO la letra.`
+    : `Traé la LETRA y los ACORDES reales TAL CUAL, CONSERVANDO los espacios/alineación (los acordes van en una línea arriba de la línea de letra, alineados sobre la sílaba). NO reformatees ni muevas los acordes. El campo "raw" tendrá el chart completo con esos espacios.`;
   return `Buscá en la web la canción "${title}"${artist ? ` de "${artist}"` : ''}, priorizando FUERTEMENTE el sitio ${site}. ${how}
 Si no la encontrás en ${site}, usá otra fuente confiable.
 Devolvé SOLO un JSON válido, sin markdown:
@@ -18,25 +18,7 @@ Devolvé SOLO un JSON válido, sin markdown:
 - "key": tonalidad principal (o "" si es solo letra).`;
 }
 
-const CONVERT_SYSTEM = `Convertís un chart (formato "acordes arriba de la letra") a formato ChordPro.
-Regla clave: cada acorde va entre corchetes [ ] PEGADO (sin espacio) a la sílaba de la letra que está JUSTO DEBAJO de él según su posición horizontal.
-Ejemplo:
-ENTRADA:
-Bm       G        D          A
-Ella durmió al calor de las brasas
-SALIDA:
-[Bm]Ella dur[G]mió al ca[D]lor de las bra[A]sas
-Otras reglas:
-- NOTACIÓN: usá SIEMPRE notación anglosajona para los acordes Y para el {key:}: C, D, E, F, G, A, B (con # o b). Si la fuente viene en notación latina (Do, Re, Mi, Fa, Sol, La, Si), convertila: Do=C, Re=D, Mi=E, Fa=F, Sol=G, La=A, Si=B (ej. Mib=Eb, Sol=G, Do#=C#, Lam=Am). Mantené los sufijos (m, 7, maj7, sus4, dim, etc.) y el bajo (/G).
-- Si la entrada es SOLO LETRA (sin acordes), devolvé solo la letra en ChordPro, SIN inventar acordes.
-- Líneas solo de acordes (intro/interludio): "[Bm] [G] [D] [A]".
-- Agregá {start_of_verse: Verso 1} / {start_of_chorus: Estribillo} / {start_of_bridge: Puente} donde corresponda.
-- Empezá con {title:}, {artist:}, {key:} usando los datos dados.
-- No inventes acordes ni letra: usá EXACTAMENTE lo que viene en la entrada.
-Devolvé SOLO un JSON: {"chordpro":"...(con \\n)"}`;
-
-// Deterministic Latin->Anglo chord notation (Do/Re/Mi/Fa/Sol/La/Si -> C/D/E/F/G/A/B),
-// so transposition works regardless of the source's notation. English chords pass through.
+/* ---------- Latin -> Anglo notation (deterministic) ---------- */
 const LATIN = { DO: 'C', RE: 'D', MI: 'E', FA: 'F', SOL: 'G', LA: 'A', SI: 'B' };
 function convertRoot(tok) {
   if (!tok) return tok;
@@ -51,6 +33,69 @@ function anglicize(chordpro) {
   return out;
 }
 
+/* ---------- Deterministic chords-above-lyrics -> inline ChordPro ---------- */
+// Accepts Anglo or Latin roots; stricter suffix so lyric words aren't mistaken for chords.
+function isChordToken(t) {
+  return /^(?:[A-G]|Do|Re|Mi|Fa|Sol|La|Si)(?:#|b)?(?:m|maj|min|dim|aug|sus|add|º|°)?(?:\d{1,2})?(?:sus\d|add\d|maj\d|[#b]\d)?(?:\/(?:[A-G]|Do|Re|Mi|Fa|Sol|La|Si)(?:#|b)?)?$/i.test(t);
+}
+function isChordLine(line) {
+  const toks = line.trim().split(/\s+/).filter(Boolean).filter((t) => !/^\(.*\)$/.test(t));
+  return toks.length > 0 && toks.every(isChordToken);
+}
+const SECTION_RE = /^(intro|verso|estrofa|estribillo|coro|puente|bridge|chorus|verse|final|outro|solo|interludio|pre-?coro|pre-?chorus|instrumental)\b/i;
+function isSectionHeader(line) {
+  const t = line.trim();
+  const clean = t.replace(/[:\[\]().]/g, '').trim();
+  if (!SECTION_RE.test(clean)) return false;
+  return t.endsWith(':') || /^\[.*\]$/.test(t) || clean.split(/\s+/).length <= 3;
+}
+// Insert each chord into the lyric line at the column where it appears above.
+function mergeChordLine(chordLine, lyricLine) {
+  const re = /\S+/g; let m; const placements = [];
+  while ((m = re.exec(chordLine)) !== null) {
+    if (/^\(.*\)$/.test(m[0])) continue; // skip annotations like (x2)
+    placements.push({ col: m.index, chord: m[0] });
+  }
+  let out = ''; let last = 0;
+  for (const p of placements) {
+    const col = Math.max(last, Math.min(p.col, lyricLine.length));
+    out += lyricLine.slice(last, col) + '[' + p.chord + ']';
+    last = col;
+  }
+  return out + lyricLine.slice(last);
+}
+function chordOnlyLine(chordLine) {
+  const re = /\S+/g; let m; const cs = [];
+  while ((m = re.exec(chordLine)) !== null) if (!/^\(.*\)$/.test(m[0])) cs.push(m[0]);
+  return cs.map((c) => '[' + c + ']').join(' ');
+}
+function rawToChordPro(raw, meta) {
+  const lines = raw.replace(/\r\n?/g, '\n').split('\n');
+  const out = [`{title: ${meta.title}}`, `{artist: ${meta.artist}}`];
+  if (meta.key) out.push(`{key: ${meta.key}}`);
+  out.push('');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '') { out.push(''); continue; }
+    if (isSectionHeader(line)) {
+      out.push(`{start_of_verse: ${line.trim().replace(/[:\[\]]/g, '').trim()}}`);
+      continue;
+    }
+    if (isChordLine(line)) {
+      const next = lines[i + 1];
+      if (next !== undefined && next.trim() !== '' && !isChordLine(next) && !isSectionHeader(next)) {
+        out.push(mergeChordLine(line, next));
+        i++;
+      } else {
+        out.push(chordOnlyLine(line));
+      }
+      continue;
+    }
+    out.push(line.replace(/\s+$/, ''));
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
 async function fetchChart(title, artist, opts = {}) {
   const site = opts.site || 'lacuerda.net';
   const found = await webSearchJSON(searchPrompt(title, artist, opts.existingGenres || [], site, !!opts.lyricsOnly));
@@ -61,14 +106,8 @@ async function fetchChart(title, artist, opts = {}) {
   const genre = (found.genre || 'Otros').trim();
   const key = (found.key || '').trim();
 
-  const convUser = `Datos: title="${finalTitle}", artist="${finalArtist}", key="${key}".\n\nCHART:\n${found.raw}`;
-  const conv = await chatJSON(CONVERT_SYSTEM, convUser, { temperature: 0.1 });
-  if (!conv.chordpro) throw new Error('no se pudo convertir a ChordPro');
-
-  return {
-    title: finalTitle, artist: finalArtist, genre,
-    key: convertRoot(key), source: found.source || '', chordpro: anglicize(conv.chordpro),
-  };
+  const chordpro = anglicize(rawToChordPro(found.raw, { title: finalTitle, artist: finalArtist, key }));
+  return { title: finalTitle, artist: finalArtist, genre, key: convertRoot(key), source: found.source || '', chordpro };
 }
 
 module.exports = { fetchChart };
