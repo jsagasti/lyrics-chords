@@ -81,7 +81,13 @@
         <button id="editor-save" class="ctrl cbtn-primary">Guardar</button>
       </span>
     </div>
-    <textarea id="editor-text" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea>
+    <div class="editor-body">
+      <textarea id="editor-text" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea>
+      <div id="editor-busy" hidden>
+        <div class="spinner"></div>
+        <div id="editor-busy-text">Buscando&hellip;</div>
+      </div>
+    </div>
   </div>
 
   <div id="formmodal" hidden>

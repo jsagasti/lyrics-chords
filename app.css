@@ -333,11 +333,26 @@ body {
 .editor-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 .editor-actions .ctrl { width: auto; padding: 0 16px; }
 .editor-actions .cbtn-primary, .form-actions .cbtn-primary { background: var(--accent); color: #1a1400; }
+.editor-body { position: relative; flex: 1 1 auto; display: flex; min-height: 0; }
 #editor-text {
   flex: 1 1 auto; width: 100%; border: 0; resize: none; background: #0e0e14; color: var(--fg);
   font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
   font-size: 1rem; line-height: 1.5; padding: 14px; white-space: pre; overflow: auto;
 }
+#editor-busy {
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(11, 11, 15, .72);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  z-index: 2;
+}
+.spinner {
+  width: 52px; height: 52px; border-radius: 50%;
+  border: 5px solid #33334a; border-top-color: var(--accent);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#editor-busy-text { color: var(--fg); font-size: 1.05rem; }
+.ctrl:disabled { opacity: .45; }
 
 /* ---- Form modal ---- */
 #formmodal { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 45; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; }

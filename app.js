@@ -537,7 +537,7 @@ function openEditor(lineIndex) {
   const lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
   ta.scrollTop = Math.max(0, (lineIndex - 3) * lh);
 }
-function closeEditor() { $('editor').hidden = true; editorSongId = null; }
+function closeEditor() { setEditorBusy(false); $('editor').hidden = true; editorSongId = null; }
 async function saveEditor() {
   const text = $('editor-text').value;
   const id = editorSongId;
@@ -573,7 +573,7 @@ async function retryWithProvider(p) {
   $('provlist').hidden = true;
   const song = state.current;
   if (!song) return;
-  toast('Buscando en ' + p.name + '…');
+  setEditorBusy(true, 'Buscando en ' + p.name + '…');
   try {
     const data = await apiPost(API.refetch, {
       title: song.title, artist: song.artist, providerSite: p.site, lyricsOnly: p.lyricsOnly,
@@ -582,7 +582,20 @@ async function retryWithProvider(p) {
       $('editor-text').value = data.chordpro;
       toast('Traído de ' + p.name + ' — revisá y Guardá');
     }
-  } catch (e) { toast('Error: ' + e.message); }
+  } catch (e) {
+    toast('Error: ' + e.message);
+  } finally {
+    setEditorBusy(false);
+  }
+}
+
+// While the LLM works: show a spinner over the editor and block text editing.
+function setEditorBusy(busy, text) {
+  $('editor-busy').hidden = !busy;
+  if (text) $('editor-busy-text').textContent = text;
+  $('editor-text').readOnly = busy;
+  $('editor-retry').disabled = busy;
+  $('editor-save').disabled = busy;
 }
 
 /* ---------- Song ops ---------- */
