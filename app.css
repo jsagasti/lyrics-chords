@@ -252,6 +252,11 @@ body {
 
 /* Library tree: Genre -> Artist -> Song */
 #song-list { margin: 0; padding: 0 0 12px; overflow-y: auto; flex: 1 1 auto; }
+/* Disable native text selection / callout so our long-press menu can fire */
+.genre-head, .artist-head, .song-item {
+  -webkit-user-select: none; -moz-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
 .genre-head {
   display: flex; align-items: center; gap: 8px; padding: 13px 14px; cursor: pointer;
   font-weight: 700; font-size: 1.05rem; color: var(--accent);
