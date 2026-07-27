@@ -35,6 +35,22 @@ Otras reglas:
 - No inventes acordes ni letra: usá EXACTAMENTE lo que viene en la entrada.
 Devolvé SOLO un JSON: {"chordpro":"...(con \\n)"}`;
 
+// Deterministic Latin->Anglo chord notation (Do/Re/Mi/Fa/Sol/La/Si -> C/D/E/F/G/A/B),
+// so transposition works regardless of the source's notation. English chords pass through.
+const LATIN = { DO: 'C', RE: 'D', MI: 'E', FA: 'F', SOL: 'G', LA: 'A', SI: 'B' };
+function convertRoot(tok) {
+  if (!tok) return tok;
+  const m = String(tok).match(/^\s*(Sol|Do|Re|Mi|Fa|La|Si)([#b]?)(.*)$/i);
+  if (!m) return tok;
+  return LATIN[m[1].toUpperCase()] + (m[2] || '') + (m[3] || '');
+}
+function anglicize(chordpro) {
+  let out = chordpro.replace(/\[([^\]]*)\]/g, (full, inner) =>
+    '[' + inner.split('/').map(convertRoot).join('/') + ']');
+  out = out.replace(/(\{\s*key\s*:\s*)([^}]+)(\})/i, (f, a, k, b) => a + convertRoot(k) + b);
+  return out;
+}
+
 async function fetchChart(title, artist, opts = {}) {
   const site = opts.site || 'lacuerda.net';
   const found = await webSearchJSON(searchPrompt(title, artist, opts.existingGenres || [], site, !!opts.lyricsOnly));
@@ -49,7 +65,10 @@ async function fetchChart(title, artist, opts = {}) {
   const conv = await chatJSON(CONVERT_SYSTEM, convUser, { temperature: 0.1 });
   if (!conv.chordpro) throw new Error('no se pudo convertir a ChordPro');
 
-  return { title: finalTitle, artist: finalArtist, genre, key, source: found.source || '', chordpro: conv.chordpro };
+  return {
+    title: finalTitle, artist: finalArtist, genre,
+    key: convertRoot(key), source: found.source || '', chordpro: anglicize(conv.chordpro),
+  };
 }
 
 module.exports = { fetchChart };
