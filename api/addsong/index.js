@@ -4,12 +4,15 @@ const { readIndex, writeIndex, writeText } = require('../shared/blob');
 const { checkPin, slug, ok, fail } = require('../shared/util');
 
 // Step 1: fetch the real chart from La Cuerda (raw = chords-above-lyrics, as on the site).
-function searchPrompt(title, artist) {
+function searchPrompt(title, artist, existingGenres) {
+  const list = (existingGenres && existingGenres.length)
+    ? existingGenres.map((g) => `"${g}"`).join(', ')
+    : '(ninguno todavía)';
   return `Buscá en la web la canción "${title}"${artist ? ` de "${artist}"` : ''}, priorizando FUERTEMENTE lacuerda.net (acordes.lacuerda.net).
 Copiá la LETRA y los ACORDES reales de esa fuente, TAL CUAL están (acordes arriba de las líneas de letra). NO inventes ni conviertas nada todavía.
 Devolvé SOLO un JSON válido, sin markdown:
 {"title":"...","artist":"...","genre":"...","key":"...","source":"URL exacta","raw":"chart completo tal cual, con saltos de línea \\n"}
-- "genre": género amplio en español, consistente (ej. "Folclore","Rock Nacional","Pop","Balada","Cumbia").
+- "genre": elegí el género. Géneros que YA existen en el catálogo: ${list}. Si la canción encaja en alguno, USÁ EXACTAMENTE ese nombre (mismas mayúsculas/tildes). Si no encaja bien en ninguno, usá exactamente "Otros".
 - "key": tonalidad principal.
 - "raw": el chart entero (acordes y letra) tal como aparece en la fuente.`;
 }
@@ -38,13 +41,16 @@ module.exports = async function (context, req) {
     const artist = (req.body && req.body.artist || '').trim();
     if (!title) return fail(context, 400, 'title requerido');
 
-    // 1) fetch real chart from La Cuerda
-    const found = await webSearchJSON(searchPrompt(title, artist));
+    const idx = await readIndex();
+    const existingGenres = [...new Set(idx.songs.map((s) => s.genre).filter(Boolean))];
+
+    // 1) fetch real chart from La Cuerda (classify into an existing genre, or "Otros")
+    const found = await webSearchJSON(searchPrompt(title, artist, existingGenres));
     if (!found.raw) return fail(context, 502, 'no se encontró el chart en la web');
 
     const finalTitle = (found.title || title).trim();
     const finalArtist = (found.artist || artist || 'Desconocido').trim();
-    const genre = (found.genre || 'Sin género').trim();
+    const genre = (found.genre || 'Otros').trim();
     const key = (found.key || '').trim();
 
     // 2) convert to inline ChordPro
@@ -55,7 +61,6 @@ module.exports = async function (context, req) {
     const id = slug(finalTitle, finalArtist);
     await writeText(`songs/${id}.chordpro`, conv.chordpro, 'text/plain; charset=utf-8');
 
-    const idx = await readIndex();
     const entry = {
       id, title: finalTitle, artist: finalArtist, genre,
       key, source: found.source || '', file: `songs/${id}.chordpro`,

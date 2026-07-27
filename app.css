@@ -297,3 +297,47 @@ body {
   pointer-events: none;
 }
 .toast.show { opacity: 1; }
+
+/* ---- Context menu ---- */
+#ctxmenu {
+  position: fixed; z-index: 40; min-width: 220px;
+  background: #1c1c26; border: 1px solid #33334a; border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.6); padding: 4px;
+}
+.ctx-item { padding: 14px 16px; font-size: 1rem; cursor: pointer; border-radius: 8px; color: var(--fg); }
+.ctx-item:active { background: var(--ctrl-active); }
+.ctx-item.danger { color: #ff7a7a; }
+
+.song-line.editable { cursor: text; }
+
+/* ---- Full-screen editor ---- */
+#editor { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; }
+.editor-head {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; padding-top: max(10px, env(safe-area-inset-top));
+  background: var(--bg-bar); border-bottom: 1px solid #2a2a38;
+}
+#editor-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.editor-actions .ctrl { width: auto; padding: 0 16px; }
+.editor-actions .cbtn-primary, .form-actions .cbtn-primary { background: var(--accent); color: #1a1400; }
+#editor-text {
+  flex: 1 1 auto; width: 100%; border: 0; resize: none; background: #0e0e14; color: var(--fg);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 1rem; line-height: 1.5; padding: 14px; white-space: pre; overflow: auto;
+}
+
+/* ---- Form modal ---- */
+#formmodal { position: fixed; inset: 0; z-index: 45; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; }
+.form-box {
+  width: min(92vw, 420px); background: var(--bg-bar); border: 1px solid #33334a; border-radius: 14px;
+  padding: 18px; box-shadow: 0 10px 40px rgba(0,0,0,.6);
+}
+.form-title { font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; }
+.form-field { display: block; color: var(--muted); font-size: .85rem; margin-bottom: 12px; }
+.form-field input {
+  display: block; width: 100%; margin-top: 6px; padding: 12px; border-radius: 10px;
+  border: 1px solid #33334a; background: #101018; color: var(--fg); font-size: 1rem;
+}
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.form-actions .ctrl { width: auto; padding: 0 18px; }

@@ -70,6 +70,30 @@
 
   <div id="scrim" hidden></div>
 
+  <div id="ctxmenu" hidden></div>
+
+  <div id="editor" hidden>
+    <div class="editor-head">
+      <span id="editor-title">Editar</span>
+      <span class="editor-actions">
+        <button id="editor-cancel" class="ctrl">Cancelar</button>
+        <button id="editor-save" class="ctrl cbtn-primary">Guardar</button>
+      </span>
+    </div>
+    <textarea id="editor-text" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off"></textarea>
+  </div>
+
+  <div id="formmodal" hidden>
+    <div class="form-box">
+      <div id="form-title" class="form-title"></div>
+      <div id="form-fields"></div>
+      <div class="form-actions">
+        <button id="form-cancel" class="ctrl">Cancelar</button>
+        <button id="form-ok" class="ctrl cbtn-primary">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

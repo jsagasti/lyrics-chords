@@ -14,6 +14,9 @@ const API = {
   search: 'api/search',
   add: 'api/addsong',
   reorg: 'api/reorganize',
+  del: 'api/deletesong',
+  update: 'api/updatesong',
+  folders: 'api/folders',
 };
 
 const state = {
@@ -28,7 +31,12 @@ const state = {
   scrollAccum: 0,
   pxPerLine: 38,
   collapsed: JSON.parse(localStorage.getItem('collapsedGenres') || '{}'),
+  genreOrder: [],
+  currentRaw: '',
 };
+
+let editorSongId = null;
+let menuJustOpenedAt = 0;
 
 const SPEED_K = 0.12;
 
@@ -105,21 +113,23 @@ function useFlat() { return preferFlat(state.current || {}, state.transpose); }
 /* ---------- ChordPro parsing ---------- */
 function parseChordPro(text) {
   const song = { title: '', artist: '', key: '', firstChord: null, lines: [] };
-  for (const raw of text.replace(/\r\n?/g, '\n').split('\n')) {
-    const line = raw;
+  const rawLines = text.replace(/\r\n?/g, '\n').split('\n');
+  const push = (obj, i) => { obj.srcLine = i; song.lines.push(obj); };
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
     const dir = line.match(/^\s*\{\s*([a-zA-Z_]+)\s*:?\s*(.*?)\s*\}\s*$/);
     if (dir) {
       const name = dir[1].toLowerCase(); const val = dir[2];
       if (name === 'title' || name === 't') song.title = val;
       else if (name === 'artist' || name === 'subtitle' || name === 'st') song.artist = val || song.artist;
       else if (name === 'key') song.key = val;
-      else if (name === 'comment' || name === 'c') song.lines.push({ type: 'comment', text: val });
+      else if (name === 'comment' || name === 'c') push({ type: 'comment', text: val }, i);
       else if (/^start_of_/.test(name) || /^so[cvbpt]$/.test(name))
-        song.lines.push({ type: 'section', text: sectionLabel(name, val) });
+        push({ type: 'section', text: sectionLabel(name, val) }, i);
       continue;
     }
-    if (line.trim() === '') { song.lines.push({ type: 'blank' }); continue; }
-    song.lines.push(parseChordLine(line, song));
+    if (line.trim() === '') { push({ type: 'blank' }, i); continue; }
+    push(parseChordLine(line, song), i);
   }
   if (!song.title) song.title = 'Sin título';
   return song;
@@ -200,6 +210,14 @@ function renderLine(ln, useF) {
     }
     default: div.className = 'song-line'; div.textContent = ln.text || '';
   }
+  if (ln.srcLine != null) {
+    div.dataset.line = ln.srcLine;
+    div.classList.add('editable');
+    div.addEventListener('click', (e) => {
+      if (e.target && e.target.classList && e.target.classList.contains('srclink')) return;
+      openEditor(ln.srcLine);
+    });
+  }
   return div;
 }
 
@@ -210,6 +228,7 @@ async function loadIndex() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     state.songs = Array.isArray(data.songs) ? data.songs : [];
+    state.genreOrder = Array.isArray(data.genreOrder) ? data.genreOrder : [];
     buildList();
     el.foot.textContent = `${state.songs.length} canciones`;
     if (state.songs.length && !state.current) {
@@ -229,6 +248,7 @@ async function loadSong(entry) {
     const res = await fetch(API.song(entry.id), { cache: 'no-cache' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const text = await res.text();
+    state.currentRaw = text;
     const song = parseChordPro(text);
     if (!song.title || song.title === 'Sin título') song.title = entry.title || song.title;
     if (!song.artist && entry.artist) song.artist = entry.artist;
@@ -266,14 +286,15 @@ function buildList() {
     am.get(a).push(s);
   }
 
-  for (const g of [...genres.keys()].sort(cmp)) {
+  for (const g of orderedGenres([...genres.keys()])) {
     const gWrap = document.createElement('div');
     gWrap.className = 'genre';
     const gHead = document.createElement('div');
     gHead.className = 'genre-head';
     const collapsed = !!state.collapsed[g];
     gHead.innerHTML = `<span class="tw">${collapsed ? '▸' : '▾'}</span><span class="gname">${escapeHtml(g)}</span>`;
-    gHead.addEventListener('click', () => { state.collapsed[g] = !state.collapsed[g]; persistCollapsed(); buildList(); });
+    gHead.addEventListener('click', () => { if (justMenu()) return; state.collapsed[g] = !state.collapsed[g]; persistCollapsed(); buildList(); });
+    onLongPress(gHead, (e) => genreMenu(g, e));
     gWrap.appendChild(gHead);
 
     if (!collapsed) {
@@ -284,6 +305,7 @@ function buildList() {
         const aHead = document.createElement('div');
         aHead.className = 'artist-head';
         aHead.textContent = a;
+        onLongPress(aHead, (e) => artistMenu(g, a, e));
         aWrap.appendChild(aHead);
         for (const s of am.get(a).sort((x, y) => cmp(x.title, y.title))) {
           aWrap.appendChild(songItem(s));
@@ -294,6 +316,14 @@ function buildList() {
     el.list.appendChild(gWrap);
   }
   markActive(state.currentId);
+}
+
+// Genre display order: custom (state.genreOrder) first, then the rest alphabetically.
+function orderedGenres(keys) {
+  const order = state.genreOrder || [];
+  const inOrder = order.filter((g) => keys.includes(g));
+  const rest = keys.filter((g) => !order.includes(g)).sort(cmp);
+  return [...inOrder, ...rest];
 }
 
 function renderFiltered(q) {
@@ -316,7 +346,8 @@ function songItem(s) {
   item.className = 'song-item';
   item.dataset.id = s.id;
   item.appendChild(document.createTextNode(s.title));
-  item.addEventListener('click', () => loadSong(s));
+  item.addEventListener('click', () => { if (justMenu()) return; loadSong(s); });
+  onLongPress(item, (e) => songMenu(s, e));
   return item;
 }
 
@@ -385,6 +416,185 @@ async function doReorganize() {
 function setAddStatus(msg) {
   el.addStatus.hidden = !msg;
   el.addStatus.textContent = msg || '';
+}
+
+/* ---------- Long-press + context menu ---------- */
+function pointOf(e) {
+  if (e.changedTouches && e.changedTouches[0]) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+  if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  return { x: e.clientX || 120, y: e.clientY || 120 };
+}
+function onLongPress(node, fn) {
+  let timer = null, fired = false, sx = 0, sy = 0;
+  const start = (e) => {
+    fired = false; const p = pointOf(e); sx = p.x; sy = p.y;
+    timer = setTimeout(() => { fired = true; fn(e); }, 500);
+  };
+  const move = (e) => { const p = pointOf(e); if (Math.abs(p.x - sx) > 10 || Math.abs(p.y - sy) > 10) cancel(); };
+  const cancel = () => { if (timer) clearTimeout(timer); timer = null; };
+  node.addEventListener('touchstart', start, { passive: true });
+  node.addEventListener('touchend', cancel);
+  node.addEventListener('touchmove', move, { passive: true });
+  node.addEventListener('mousedown', start);
+  node.addEventListener('mouseup', cancel);
+  node.addEventListener('mouseleave', cancel);
+  node.addEventListener('contextmenu', (e) => { e.preventDefault(); cancel(); fired = true; fn(e); });
+  // swallow the click the browser synthesizes right after a long-press
+  node.addEventListener('click', (e) => { if (fired) { e.preventDefault(); e.stopPropagation(); fired = false; } }, true);
+}
+function justMenu() { return (Date.now() - menuJustOpenedAt) < 700; }
+
+function showMenu(x, y, items) {
+  menuJustOpenedAt = Date.now();
+  const m = $('ctxmenu');
+  m.innerHTML = '';
+  for (const it of items) {
+    const b = document.createElement('div');
+    b.className = 'ctx-item' + (it.danger ? ' danger' : '');
+    b.textContent = it.label;
+    b.addEventListener('click', (ev) => { ev.stopPropagation(); hideMenu(); it.fn(); });
+    m.appendChild(b);
+  }
+  m.hidden = false;
+  const w = m.offsetWidth || 220, h = m.offsetHeight || (items.length * 50);
+  m.style.left = Math.max(6, Math.min(x, window.innerWidth - w - 6)) + 'px';
+  m.style.top = Math.max(6, Math.min(y, window.innerHeight - h - 6)) + 'px';
+}
+function hideMenu() { $('ctxmenu').hidden = true; }
+
+function songMenu(s, e) {
+  const p = pointOf(e);
+  showMenu(p.x, p.y, [
+    { label: 'Editar letra/acordes', fn: () => { loadSong(s).then(() => openEditor(0)); } },
+    { label: 'Reclasificar', fn: () => reclassifySong(s) },
+    { label: 'Borrar canción', danger: true, fn: () => deleteSong(s) },
+  ]);
+}
+function genreMenu(g, e) {
+  const p = pointOf(e);
+  showMenu(p.x, p.y, [
+    { label: 'Renombrar género', fn: () => renameGenre(g) },
+    { label: 'Subir', fn: () => moveGenre(g, -1) },
+    { label: 'Bajar', fn: () => moveGenre(g, 1) },
+    { label: 'Borrar (mover a Otros)', danger: true, fn: () => deleteGenre(g) },
+  ]);
+}
+function artistMenu(g, a, e) {
+  const p = pointOf(e);
+  showMenu(p.x, p.y, [{ label: 'Renombrar artista', fn: () => renameArtist(g, a) }]);
+}
+
+/* ---------- Form modal ---------- */
+function showForm(title, fields, onOk) {
+  $('form-title').textContent = title;
+  const wrap = $('form-fields'); wrap.innerHTML = '';
+  const inputs = {};
+  for (const f of fields) {
+    const l = document.createElement('label'); l.className = 'form-field';
+    l.appendChild(document.createTextNode(f.label));
+    const inp = document.createElement('input'); inp.type = 'text'; inp.value = f.value || '';
+    l.appendChild(inp); wrap.appendChild(l);
+    inputs[f.name] = inp;
+  }
+  const modal = $('formmodal'); modal.hidden = false;
+  const okBtn = $('form-ok'), cancelBtn = $('form-cancel');
+  const close = () => { modal.hidden = true; okBtn.onclick = null; cancelBtn.onclick = null; };
+  okBtn.onclick = async () => {
+    const vals = {}; for (const k in inputs) vals[k] = inputs[k].value.trim();
+    close();
+    try { await onOk(vals); } catch (e) { toast('Error: ' + e.message); }
+  };
+  cancelBtn.onclick = close;
+  const first = fields[0] && inputs[fields[0].name];
+  if (first) { first.focus(); first.select(); }
+}
+
+/* ---------- Song editor ---------- */
+function openEditor(lineIndex) {
+  if (!state.currentId) return;
+  const ta = $('editor-text');
+  ta.value = state.currentRaw || '';
+  editorSongId = state.currentId;
+  $('editor-title').textContent = 'Editar: ' + (state.current ? state.current.title : '');
+  $('editor').hidden = false;
+  const lines = ta.value.split('\n');
+  let offset = 0;
+  for (let i = 0; i < lineIndex && i < lines.length; i++) offset += lines[i].length + 1;
+  ta.focus();
+  try { ta.setSelectionRange(offset, offset); } catch (_) {}
+  const lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+  ta.scrollTop = Math.max(0, (lineIndex - 3) * lh);
+}
+function closeEditor() { $('editor').hidden = true; editorSongId = null; }
+async function saveEditor() {
+  const text = $('editor-text').value;
+  const id = editorSongId;
+  closeEditor();
+  try {
+    await apiPost(API.update, { id, chordpro: text });
+    toast('Guardada');
+    await loadIndex();
+    const entry = state.songs.find((s) => s.id === id);
+    if (entry) loadSong(entry);
+  } catch (e) { toast('Error: ' + e.message); }
+}
+
+/* ---------- Song ops ---------- */
+async function deleteSong(s) {
+  if (!window.confirm(`¿Borrar "${s.title}"?`)) return;
+  try {
+    await apiPost(API.del, { id: s.id });
+    if (state.currentId === s.id) { state.current = null; state.currentId = null; el.song.innerHTML = ''; el.title.textContent = ''; }
+    await loadIndex();
+    toast('Borrada');
+  } catch (e) { toast('Error: ' + e.message); }
+}
+function reclassifySong(s) {
+  showForm('Reclasificar canción', [
+    { name: 'genre', label: 'Género', value: s.genre || '' },
+    { name: 'artist', label: 'Artista', value: s.artist || '' },
+  ], async (v) => {
+    await apiPost(API.update, { id: s.id, genre: v.genre, artist: v.artist });
+    await loadIndex();
+    toast('Reclasificada');
+  });
+}
+
+/* ---------- Folder ops ---------- */
+function renameGenre(g) {
+  showForm('Renombrar género', [{ name: 'to', label: 'Nuevo nombre', value: g }], async (v) => {
+    if (!v.to || v.to === g) return;
+    await apiPost(API.folders, { op: 'rename-genre', from: g, to: v.to });
+    await loadIndex();
+    toast('Género renombrado');
+  });
+}
+function renameArtist(g, a) {
+  showForm('Renombrar artista', [{ name: 'to', label: 'Nuevo nombre', value: a }], async (v) => {
+    if (!v.to || v.to === a) return;
+    await apiPost(API.folders, { op: 'rename-artist', genre: g, from: a, to: v.to });
+    await loadIndex();
+    toast('Artista renombrado');
+  });
+}
+async function deleteGenre(g) {
+  if (!window.confirm(`¿Borrar el género "${g}"? Sus canciones pasan a "Otros".`)) return;
+  try {
+    await apiPost(API.folders, { op: 'delete-genre', genre: g });
+    await loadIndex();
+    toast('Movidas a Otros');
+  } catch (e) { toast('Error: ' + e.message); }
+}
+async function moveGenre(g, dir) {
+  const keys = [...new Set(state.songs.map((s) => s.genre || 'Sin género'))];
+  const genres = orderedGenres(keys);
+  const i = genres.indexOf(g), j = i + dir;
+  if (i < 0 || j < 0 || j >= genres.length) return;
+  [genres[i], genres[j]] = [genres[j], genres[i]];
+  state.genreOrder = genres;
+  buildList();
+  try { await apiPost(API.folders, { op: 'reorder-genres', order: genres }); }
+  catch (e) { toast('Error: ' + e.message); }
 }
 
 /* ---------- Auto-scroll ---------- */
@@ -480,11 +690,18 @@ function init() {
   $('btn-refresh').addEventListener('click', () => { toast('Recargando…'); loadIndex(); });
   $('btn-add-search').addEventListener('click', doSearch);
   $('btn-reorg').addEventListener('click', doReorganize);
+  $('editor-save').addEventListener('click', saveEditor);
+  $('editor-cancel').addEventListener('click', closeEditor);
   el.addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
   el.filter.addEventListener('input', buildList);
+  document.addEventListener('click', (e) => {
+    const m = $('ctxmenu');
+    if (!m.hidden && !m.contains(e.target) && Date.now() - menuJustOpenedAt > 350) hideMenu();
+  });
 
   document.addEventListener('keydown', (e) => {
-    if (e.target === el.filter || e.target === el.addInput) return;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (e.key === 'Escape') { hideMenu(); closeEditor(); $('formmodal').hidden = true; return; }
     if (e.code === 'Space') { e.preventDefault(); toggleScroll(); }
     else if (e.key === 'ArrowUp') setTranspose(1);
     else if (e.key === 'ArrowDown') setTranspose(-1);
