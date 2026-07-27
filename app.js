@@ -598,6 +598,44 @@ function setEditorBusy(busy, text) {
   $('editor-save').disabled = busy;
 }
 
+// Remove all inline chords from the lyrics and list them (deduped, in order of appearance,
+// on one row) right below the title/artist/key. Useful when the inline placement is off.
+function chordsToTop(text) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const seen = new Set();
+  const chords = [];
+  const bracketRe = /\[([^\]]*)\]/g;
+  for (const ln of lines) {
+    let m;
+    while ((m = bracketRe.exec(ln)) !== null) {
+      const c = m[1].trim();
+      if (c && CHORD_RE.test(c) && !seen.has(c)) { seen.add(c); chords.push(c); }
+    }
+  }
+  const stripped = (s) => s.replace(/\[[^\]]*\]/g, '');
+  // keep the leading header directives (title/artist/key/subtitle/comment) as-is
+  let headerEnd = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (t === '' || /^\{\s*(title|t|artist|subtitle|st|key|c|comment)\s*[:}]/i.test(t)) headerEnd = i + 1;
+    else break;
+  }
+  const header = lines.slice(0, headerEnd).map(stripped);
+  while (header.length && header[header.length - 1].trim() === '') header.pop();
+  const body = lines.slice(headerEnd).map(stripped);
+  const chordRow = chords.length ? chords.map((c) => `[${c}]`).join(' ') : '';
+  const out = header.slice();
+  if (chordRow) out.push('', chordRow);
+  out.push('', ...body);
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\n+$/,'\n');
+}
+function applyChordsToTop() {
+  const ta = $('editor-text');
+  if (ta.readOnly) return;
+  ta.value = chordsToTop(ta.value);
+  toast('Acordes movidos arriba');
+}
+
 /* ---------- Song ops ---------- */
 async function deleteSong(s) {
   if (!window.confirm(`¿Borrar "${s.title}"?`)) return;
@@ -790,6 +828,7 @@ function init() {
   $('editor-save').addEventListener('click', saveEditor);
   $('editor-cancel').addEventListener('click', closeEditor);
   $('editor-retry').addEventListener('click', openProviderList);
+  $('editor-chordstop').addEventListener('click', applyChordsToTop);
   $('prov-cancel').addEventListener('click', () => { $('provlist').hidden = true; });
   el.addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
   el.filter.addEventListener('input', buildList);

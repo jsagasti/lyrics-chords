@@ -3,7 +3,7 @@
    - Online (the normal kiosk state): every reload fetches the latest app + songs,
      so pushes to the repo show up immediately. No version bump needed.
    - Offline: falls back to the last-cached copy so the tablet still works. */
-const CACHE = 'lyrics-v14';
+const CACHE = 'lyrics-v15';
 const SHELL = [
   './',
   './index.html',
