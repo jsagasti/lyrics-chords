@@ -18,7 +18,20 @@ const API = {
   update: 'api/updatesong',
   folders: 'api/folders',
   prefs: 'api/prefs',
+  refetch: 'api/refetch',
 };
+
+// Song providers for the "retry with LLM" flow. 5 sources; Genius is lyrics-only (no chords).
+const PROVIDERS = [
+  { id: 'lacuerda', name: 'La Cuerda', site: 'lacuerda.net', lyricsOnly: false },
+  { id: 'ultimateguitar', name: 'Ultimate Guitar', site: 'ultimate-guitar.com', lyricsOnly: false },
+  { id: 'cifraclub', name: 'Cifra Club', site: 'cifraclub.com', lyricsOnly: false },
+  { id: 'chordie', name: 'Chordie', site: 'chordie.com', lyricsOnly: false },
+  { id: 'genius', name: 'Genius (solo letra)', site: 'genius.com', lyricsOnly: true },
+];
+function defaultProvider() {
+  return PROVIDERS.find((p) => p.id === localStorage.getItem('defaultProvider')) || PROVIDERS[0];
+}
 
 const state = {
   songs: [],          // [{id,title,artist,genre,file}]
@@ -301,19 +314,10 @@ function buildList() {
 
     if (!collapsed) {
       const am = genres.get(g);
-      for (const a of [...am.keys()].sort(cmp)) {
-        const aWrap = document.createElement('div');
-        aWrap.className = 'artist';
-        const aHead = document.createElement('div');
-        aHead.className = 'artist-head';
-        aHead.textContent = a;
-        onLongPress(aHead, (e) => artistMenu(g, a, e));
-        aWrap.appendChild(aHead);
-        for (const s of am.get(a).sort((x, y) => cmp(x.title, y.title))) {
-          aWrap.appendChild(songItem(s));
-        }
-        gWrap.appendChild(aWrap);
-      }
+      const songs = [];
+      for (const a of am.keys()) for (const s of am.get(a)) songs.push(s);
+      songs.sort((x, y) => cmp(x.artist || '', y.artist || '') || cmp(x.title, y.title));
+      for (const s of songs) gWrap.appendChild(songItem(s, true));
     }
     el.list.appendChild(gWrap);
   }
@@ -332,22 +336,26 @@ function renderFiltered(q) {
   const matches = state.songs.filter((s) =>
     (s.title + ' ' + (s.artist || '') + ' ' + (s.genre || '')).toLowerCase().includes(q));
   for (const s of matches.sort((x, y) => cmp(x.title, y.title))) {
-    const item = songItem(s);
-    const sub = document.createElement('span');
-    sub.className = 'sub';
-    sub.textContent = [s.artist, s.genre].filter(Boolean).join(' · ');
-    item.appendChild(sub);
-    el.list.appendChild(item);
+    el.list.appendChild(songItem(s, true));
   }
   if (!matches.length) el.list.innerHTML = '<div class="empty">Sin resultados</div>';
   markActive(state.currentId);
 }
 
-function songItem(s) {
+function songItem(s, showArtist) {
   const item = document.createElement('div');
   item.className = 'song-item';
   item.dataset.id = s.id;
-  item.appendChild(document.createTextNode(s.title));
+  const t = document.createElement('span');
+  t.className = 'song-title';
+  t.textContent = s.title;
+  item.appendChild(t);
+  if (showArtist && s.artist) {
+    const a = document.createElement('span');
+    a.className = 'song-artist';
+    a.textContent = s.artist;
+    item.appendChild(a);
+  }
   item.addEventListener('click', () => { if (justMenu()) return; loadSong(s); });
   onLongPress(item, (e) => songMenu(s, e));
   return item;
@@ -392,7 +400,8 @@ async function addSong(opt) {
   setAddStatus(`Generando "${opt.title}"…`);
   el.addResults.innerHTML = '';
   try {
-    const data = await apiPost(API.add, { title: opt.title, artist: opt.artist });
+    const p = defaultProvider();
+    const data = await apiPost(API.add, { title: opt.title, artist: opt.artist, providerSite: p.site, lyricsOnly: p.lyricsOnly });
     setAddStatus('');
     el.addInput.value = '';
     await loadIndex();
@@ -469,6 +478,7 @@ function songMenu(s, e) {
   showMenu(p.x, p.y, [
     { label: 'Editar letra/acordes', fn: () => { loadSong(s).then(() => openEditor(0)); } },
     { label: 'Reclasificar', fn: () => reclassifySong(s) },
+    { label: 'Renombrar artista', fn: () => renameArtist(s.genre || 'Sin género', s.artist || 'Desconocido') },
     { label: 'Borrar canción', danger: true, fn: () => deleteSong(s) },
   ]);
 }
@@ -538,6 +548,40 @@ async function saveEditor() {
     await loadIndex();
     const entry = state.songs.find((s) => s.id === id);
     if (entry) loadSong(entry);
+  } catch (e) { toast('Error: ' + e.message); }
+}
+
+// Retry fetching the song from a chosen provider; result goes into the editor for review.
+function openProviderList() {
+  const wrap = $('prov-items'); wrap.innerHTML = '';
+  const def = defaultProvider();
+  for (const p of PROVIDERS) {
+    const row = document.createElement('div');
+    row.className = 'prov-item';
+    const tags = [];
+    if (p.lyricsOnly) tags.push('<span class="prov-tag">solo letra</span>');
+    if (p.id === def.id) tags.push('<span class="prov-tag def">actual</span>');
+    row.innerHTML = `<span>${escapeHtml(p.name)}</span><span class="prov-tags">${tags.join('')}</span>`;
+    row.addEventListener('click', () => retryWithProvider(p));
+    wrap.appendChild(row);
+  }
+  $('prov-default-cb').checked = false;
+  $('provlist').hidden = false;
+}
+async function retryWithProvider(p) {
+  if ($('prov-default-cb').checked) localStorage.setItem('defaultProvider', p.id);
+  $('provlist').hidden = true;
+  const song = state.current;
+  if (!song) return;
+  toast('Buscando en ' + p.name + '…');
+  try {
+    const data = await apiPost(API.refetch, {
+      title: song.title, artist: song.artist, providerSite: p.site, lyricsOnly: p.lyricsOnly,
+    });
+    if (data.chordpro) {
+      $('editor-text').value = data.chordpro;
+      toast('Traído de ' + p.name + ' — revisá y Guardá');
+    }
   } catch (e) { toast('Error: ' + e.message); }
 }
 
@@ -732,6 +776,8 @@ function init() {
   $('btn-reorg').addEventListener('click', doReorganize);
   $('editor-save').addEventListener('click', saveEditor);
   $('editor-cancel').addEventListener('click', closeEditor);
+  $('editor-retry').addEventListener('click', openProviderList);
+  $('prov-cancel').addEventListener('click', () => { $('provlist').hidden = true; });
   el.addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
   el.filter.addEventListener('input', buildList);
   document.addEventListener('click', (e) => {

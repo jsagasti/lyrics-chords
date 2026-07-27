@@ -76,6 +76,7 @@
     <div class="editor-head">
       <span id="editor-title">Editar</span>
       <span class="editor-actions">
+        <button id="editor-retry" class="ctrl">Reintentar IA</button>
         <button id="editor-cancel" class="ctrl">Cancelar</button>
         <button id="editor-save" class="ctrl cbtn-primary">Guardar</button>
       </span>
@@ -91,6 +92,15 @@
         <button id="form-cancel" class="ctrl">Cancelar</button>
         <button id="form-ok" class="ctrl cbtn-primary">OK</button>
       </div>
+    </div>
+  </div>
+
+  <div id="provlist" hidden>
+    <div class="form-box">
+      <div class="form-title">Reintentar con otro proveedor</div>
+      <div id="prov-items"></div>
+      <label class="prov-default"><input type="checkbox" id="prov-default-cb" /> Usar como predeterminado</label>
+      <div class="form-actions"><button id="prov-cancel" class="ctrl">Cancelar</button></div>
     </div>
   </div>
 
