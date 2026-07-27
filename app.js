@@ -312,10 +312,11 @@ function buildList() {
     gHead.innerHTML = `<span class="tw">${collapsed ? '▸' : '▾'}</span><span class="gname">${escapeHtml(g)}</span>`;
     gHead.addEventListener('click', () => { if (justMenu()) return; state.collapsed[g] = !state.collapsed[g]; persistCollapsed(); buildList(); });
     onLongPress(gHead, (e) => genreMenu(g, e));
-    gHead.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; gHead.classList.add('drop'); });
-    gHead.addEventListener('dragleave', () => gHead.classList.remove('drop'));
-    gHead.addEventListener('drop', (e) => { e.preventDefault(); gHead.classList.remove('drop'); dropOnGenre(g, e); });
     gWrap.appendChild(gHead);
+    // the whole folder block (header + its songs) is the drop target for reassigning a genre
+    gWrap.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; gWrap.classList.add('drop'); });
+    gWrap.addEventListener('dragleave', (e) => { if (!gWrap.contains(e.relatedTarget)) gWrap.classList.remove('drop'); });
+    gWrap.addEventListener('drop', (e) => { e.preventDefault(); gWrap.classList.remove('drop'); dropOnGenre(g, e); });
 
     if (!collapsed) {
       const am = genres.get(g);
